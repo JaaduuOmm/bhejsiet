@@ -77,6 +77,28 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            #settings-btn {
+                top: 10px;
+                right: 10px;
+                padding: 10px 16px;
+                font-size: 14px;
+                min-height: 48px;
+                min-width: 48px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #settings-btn {
+                padding: 8px 12px;
+                font-size: 12px;
+                gap: 4px;
+            }
         }
 
         #settings-btn:hover {
@@ -123,6 +145,26 @@
             z-index: 500;
             transition: all 0.3s ease;
         }
+
+        /* Mobile text scaling */
+        @media (max-width: 768px) {
+            .text-label {
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .text-label {
+                font-size: 10px;
+            }
+        }
+
+        /* Touch-friendly interactions */
+        @media (hover: none) and (pointer: coarse) {
+            .text-label {
+                font-size: 16px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -143,6 +185,8 @@
         let textLabels = [];
         let isAligned = false;
         let animating = false;
+        let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        let isTouch = 'ontouchstart' in window;
         
         // Button data
         const buttonData = [
@@ -226,7 +270,9 @@
                 // Initial random positioning in a larger sphere
                 const angle = (index / buttonData.length) * Math.PI * 2;
                 const verticalAngle = (Math.random() - 0.5) * Math.PI * 0.8;
-                const radius = 3 + Math.random() * 3;
+                // Adjust radius for mobile to bring buttons closer
+                const baseRadius = isMobile ? 2.5 : 3;
+                const radius = baseRadius + Math.random() * (isMobile ? 2 : 3);
                 
                 button.position.x = Math.cos(angle) * Math.cos(verticalAngle) * radius;
                 button.position.y = Math.sin(verticalAngle) * radius;
@@ -251,8 +297,12 @@
         function createButton(text, color, id) {
             const group = new THREE.Group();
             
-            // Button geometry
-            const geometry = new THREE.BoxGeometry(2, 0.6, 0.2);
+            // Button geometry - smaller on mobile
+            const width = isMobile ? 1.6 : 2;
+            const height = isMobile ? 0.5 : 0.6;
+            const depth = isMobile ? 0.15 : 0.2;
+            
+            const geometry = new THREE.BoxGeometry(width, height, depth);
             const material = new THREE.MeshLambertMaterial({ 
                 color: color,
                 transparent: true,
@@ -263,8 +313,12 @@
             buttonMesh.castShadow = true;
             buttonMesh.receiveShadow = true;
             
-            // Add glow effect
-            const glowGeometry = new THREE.BoxGeometry(2.1, 0.7, 0.25);
+            // Add glow effect - slightly smaller on mobile
+            const glowWidth = isMobile ? 1.7 : 2.1;
+            const glowHeight = isMobile ? 0.6 : 0.7;
+            const glowDepth = isMobile ? 0.2 : 0.25;
+            
+            const glowGeometry = new THREE.BoxGeometry(glowWidth, glowHeight, glowDepth);
             const glowMaterial = new THREE.MeshBasicMaterial({
                 color: color,
                 transparent: true,
@@ -347,28 +401,54 @@
         }
 
         function setupEventListeners() {
-            // Mouse movement for parallax effect
-            document.addEventListener('mousemove', (event) => {
-                mouseX = (event.clientX - window.innerWidth / 2) * 0.0005;
-                mouseY = (event.clientY - window.innerHeight / 2) * 0.0005;
+            // Touch and mouse movement for parallax effect
+            const handleMove = (clientX, clientY) => {
+                mouseX = (clientX - window.innerWidth / 2) * (isMobile ? 0.0003 : 0.0005);
+                mouseY = (clientY - window.innerHeight / 2) * (isMobile ? 0.0003 : 0.0005);
                 
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                mouse.x = (clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            };
+
+            // Mouse events for desktop
+            document.addEventListener('mousemove', (event) => {
+                handleMove(event.clientX, event.clientY);
             });
 
-            // Click events
+            // Touch events for mobile
+            document.addEventListener('touchmove', (event) => {
+                event.preventDefault();
+                if (event.touches.length > 0) {
+                    handleMove(event.touches[0].clientX, event.touches[0].clientY);
+                }
+            });
+
+            // Click and touch events
             document.addEventListener('click', onDocumentClick);
+            document.addEventListener('touchend', onDocumentClick);
             
             // Settings button
             document.getElementById('settings-btn').addEventListener('click', toggleAlignment);
+            document.getElementById('settings-btn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                toggleAlignment();
+            });
             
             // Window resize
             window.addEventListener('resize', onWindowResize);
+            window.addEventListener('orientationchange', () => {
+                setTimeout(onWindowResize, 100);
+            });
         }
 
         function onDocumentClick(event) {
             // Skip if clicking on settings button
             if (event.target.id === 'settings-btn') return;
+            
+            // Prevent default for touch events
+            if (event.type === 'touchend') {
+                event.preventDefault();
+            }
             
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(buttons, true);
@@ -551,58 +631,60 @@
                 }
             });
             
-            // Check for hover effects
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(buttons, true);
-            
-            buttons.forEach((button, index) => {
-                const isHovered = intersects.some(intersect => intersect.object.parent === button);
-                if (isHovered !== button.userData.hovered) {
-                    button.userData.hovered = isHovered;
-                    
-                    // Enhanced hover glow effect
-                    button.children.forEach((child, childIndex) => {
-                        if (child.material && child.material.opacity !== undefined) {
-                            if (isHovered) {
-                                // Main button mesh (index 1) gets brighter
-                                if (childIndex === 1) {
-                                    child.material.opacity = 1.0;
-                                    child.material.emissive = new THREE.Color(button.userData.color).multiplyScalar(0.3);
-                                }
-                                // Glow mesh (index 0) gets much more visible
-                                else if (childIndex === 0) {
-                                    child.material.opacity = 0.8;
-                                    child.scale.setScalar(1.2);
-                                }
-                            } else {
-                                // Reset to normal state
-                                if (childIndex === 1) {
-                                    child.material.opacity = 0.9;
-                                    child.material.emissive = new THREE.Color(0x000000);
-                                }
-                                else if (childIndex === 0) {
-                                    child.material.opacity = 0.3;
-                                    child.scale.setScalar(1.0);
+            // Check for hover effects (desktop only for performance)
+            if (!isMobile) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(buttons, true);
+                
+                buttons.forEach((button, index) => {
+                    const isHovered = intersects.some(intersect => intersect.object.parent === button);
+                    if (isHovered !== button.userData.hovered) {
+                        button.userData.hovered = isHovered;
+                        
+                        // Enhanced hover glow effect
+                        button.children.forEach((child, childIndex) => {
+                            if (child.material && child.material.opacity !== undefined) {
+                                if (isHovered) {
+                                    // Main button mesh (index 1) gets brighter
+                                    if (childIndex === 1) {
+                                        child.material.opacity = 1.0;
+                                        child.material.emissive = new THREE.Color(button.userData.color).multiplyScalar(0.3);
+                                    }
+                                    // Glow mesh (index 0) gets much more visible
+                                    else if (childIndex === 0) {
+                                        child.material.opacity = 0.8;
+                                        child.scale.setScalar(1.2);
+                                    }
+                                } else {
+                                    // Reset to normal state
+                                    if (childIndex === 1) {
+                                        child.material.opacity = 0.9;
+                                        child.material.emissive = new THREE.Color(0x000000);
+                                    }
+                                    else if (childIndex === 0) {
+                                        child.material.opacity = 0.3;
+                                        child.scale.setScalar(1.0);
+                                    }
                                 }
                             }
-                        }
-                    });
-                    
-                    // Make text label glow on hover
-                    const textLabel = textLabels[index];
-                    if (textLabel) {
-                        if (isHovered) {
-                            textLabel.style.textShadow = `0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.6), 0 0 30px rgba(255, 255, 255, 0.4)`;
-                            textLabel.style.color = '#ffffff';
-                            textLabel.style.fontSize = '16px';
-                        } else {
-                            textLabel.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.8)';
-                            textLabel.style.color = 'white';
-                            textLabel.style.fontSize = '14px';
+                        });
+                        
+                        // Make text label glow on hover
+                        const textLabel = textLabels[index];
+                        if (textLabel) {
+                            if (isHovered) {
+                                textLabel.style.textShadow = `0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.6), 0 0 30px rgba(255, 255, 255, 0.4)`;
+                                textLabel.style.color = '#ffffff';
+                                textLabel.style.fontSize = '16px';
+                            } else {
+                                textLabel.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.8)';
+                                textLabel.style.color = 'white';
+                                textLabel.style.fontSize = '14px';
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
             
             // Update text labels positions
             updateTextLabels();
